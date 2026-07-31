@@ -173,3 +173,51 @@ app.delete('/api/admin/accounts/:id', authenticateAdmin, async (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));
+
+// Payment Verification Endpoint
+app.post("/api/verify-payment", async (req, res) => {
+    const { email, txid, orderId, amount } = req.body;
+
+    if (!txid || !email) {
+        return res.status(400).json({ 
+            success: false, 
+            message: "Missing required details (email or TXID)." 
+        });
+    }
+
+    try {
+        // Query NOWPayments API using the environment variable key
+        const response = await fetch("https://api.nowpayments.io/v1/payment/?limit=100", {
+            method: "GET",
+            headers: {
+                "x-api-key": process.env.NOWPAYMENTS_API_KEY
+            }
+        });
+
+        const data = await response.json();
+
+        // Search for matching payment transaction hash
+        const matchingPayment = data.payments?.find(
+            (p) => p.payin_hash?.toLowerCase() === txid.toLowerCase() && p.payment_status === "finished"
+        );
+
+        if (matchingPayment) {
+            return res.json({ 
+                success: true, 
+                message: "Payment successfully verified!" 
+            });
+        } else {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Transaction Hash not found or payment status is not finished." 
+            });
+        }
+
+    } catch (err) {
+        console.error("Verification Error:", err);
+        return res.status(500).json({ 
+            success: false, 
+            message: "Server error during verification. Try again later." 
+        });
+    }
+});
