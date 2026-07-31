@@ -11,11 +11,13 @@
   "license": "ISC",
   "dependencies": {
     "axios": "^1.19.0",
+    "better-sqlite3": "^13.0.2",
     "body-parser": "^2.3.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^9.0.3",
     "sqlite": "^5.1.1",
     "sqlite3": "^6.0.1"
   }
