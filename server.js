@@ -22,12 +22,12 @@ db.exec(`
   )
 `);
 
-// Configure Nodemailer to Send Email Alerts
+// Configure Nodemailer using your Render environment variables
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: process.env.CLIENT_NOTIFICATION_EMAIL,
-    pass: process.env.CLIENT_EMAIL_PASSWORD
+    pass: process.env.ADMIN_EMAIL_PASSWORD // Matches your Render variable
   }
 });
 
@@ -42,7 +42,7 @@ app.post("/api/verify-payment", async (req, res) => {
   }
 
   try {
-    // Verify payment against NOWPayments
+    // Check payment status with NOWPayments
     const response = await fetch("https://api.nowpayments.io/v1/payment/?limit=100", {
       headers: { "x-api-key": process.env.NOWPAYMENTS_API_KEY }
     });
@@ -53,7 +53,7 @@ app.post("/api/verify-payment", async (req, res) => {
     );
 
     if (matchingPayment) {
-      // Send Email Alert to Client
+      // Send Email Notification to Client
       const mailOptions = {
         from: process.env.CLIENT_NOTIFICATION_EMAIL,
         to: process.env.CLIENT_NOTIFICATION_EMAIL,
@@ -105,8 +105,12 @@ app.get("/api/products", (req, res) => {
 // Admin: Save or update an account card
 app.post("/api/admin/products", (req, res) => {
   const clientSecret = req.headers["x-admin-secret"];
-  if (clientSecret !== process.env.ADMIN_SECRET) {
-    return res.status(401).json({ success: false, message: "Unauthorized: Invalid Secret Key" });
+  
+  // Accepts either ADMIN_SECRET or ADMIN_PASSWORD from Render
+  const secret = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD;
+
+  if (clientSecret !== secret) {
+    return res.status(401).json({ success: false, message: "Unauthorized: Invalid Passcode" });
   }
 
   const { id, title, subtext, price, image_url, badge } = req.body;
@@ -132,7 +136,9 @@ app.post("/api/admin/products", (req, res) => {
 // Admin: Delete an account card
 app.delete("/api/admin/products/:id", (req, res) => {
   const clientSecret = req.headers["x-admin-secret"];
-  if (clientSecret !== process.env.ADMIN_SECRET) {
+  const secret = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD;
+
+  if (clientSecret !== secret) {
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
 
