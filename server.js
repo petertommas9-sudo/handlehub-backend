@@ -1,33 +1,41 @@
 const express = require("express");
 const cors = require("cors");
 const nodemailer = require("nodemailer");
-const Database = require("better-sqlite3");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Initialize SQLite Database
-const db = new Database("database.sqlite");
+// File path for products storage
+const PRODUCTS_FILE = path.join(__dirname, "products.json");
 
-// Create Products Table for Account Cards
-db.exec(`
-  CREATE TABLE IF NOT EXISTS products (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT,
-    subtext TEXT,
-    price TEXT,
-    image_url TEXT,
-    badge TEXT
-  )
-`);
+// Helper function to read products from JSON file
+function getProducts() {
+  if (!fs.existsSync(PRODUCTS_FILE)) {
+    fs.writeFileSync(PRODUCTS_FILE, JSON.stringify([], null, 2));
+    return [];
+  }
+  try {
+    const data = fs.readFileSync(PRODUCTS_FILE, "utf8");
+    return JSON.parse(data || "[]");
+  } catch (err) {
+    return [];
+  }
+}
 
-// Configure Nodemailer using your Render environment variables
+// Helper function to save products to JSON file
+function saveProducts(products) {
+  fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(products, null, 2));
+}
+
+// Configure Nodemailer using Render Environment Variables
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
     user: process.env.CLIENT_NOTIFICATION_EMAIL,
-    pass: process.env.ADMIN_EMAIL_PASSWORD // Matches your Render variable
+    pass: process.env.ADMIN_EMAIL_PASSWORD
   }
 });
 
@@ -42,7 +50,6 @@ app.post("/api/verify-payment", async (req, res) => {
   }
 
   try {
-    // Check payment status with NOWPayments
     const response = await fetch("https://api.nowpayments.io/v1/payment/?limit=100", {
       headers: { "x-api-key": process.env.NOWPAYMENTS_API_KEY }
     });
@@ -53,7 +60,7 @@ app.post("/api/verify-payment", async (req, res) => {
     );
 
     if (matchingPayment) {
-      // Send Email Notification to Client
+      // Send Email Alert
       const mailOptions = {
         from: process.env.CLIENT_NOTIFICATION_EMAIL,
         to: process.env.CLIENT_NOTIFICATION_EMAIL,
@@ -92,21 +99,15 @@ app.post("/api/verify-payment", async (req, res) => {
    2. ACCOUNT CARD MANAGEMENT ROUTES
 =============================== */
 
-// Public: Fetch all account cards for the main website
+// Public: Fetch all account cards for main website
 app.get("/api/products", (req, res) => {
-  try {
-    const products = db.prepare("SELECT * FROM products").all();
-    res.json({ success: true, products });
-  } catch (err) {
-    res.status(500).json({ success: false, message: "Failed to load products" });
-  }
+  const products = getProducts();
+  res.json({ success: true, products });
 });
 
 // Admin: Save or update an account card
 app.post("/api/admin/products", (req, res) => {
   const clientSecret = req.headers["x-admin-secret"];
-  
-  // Accepts either ADMIN_SECRET or ADMIN_PASSWORD from Render
   const secret = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD;
 
   if (clientSecret !== secret) {
@@ -114,22 +115,25 @@ app.post("/api/admin/products", (req, res) => {
   }
 
   const { id, title, subtext, price, image_url, badge } = req.body;
+  let products = getProducts();
 
   if (id) {
-    const stmt = db.prepare(`
-      UPDATE products 
-      SET title=?, subtext=?, price=?, image_url=?, badge=? 
-      WHERE id=?
-    `);
-    stmt.run(title, subtext, price, image_url, badge, id);
+    // Update existing product
+    products = products.map(p => p.id === parseInt(id) ? { id: parseInt(id), title, subtext, price, image_url, badge } : p);
   } else {
-    const stmt = db.prepare(`
-      INSERT INTO products (title, subtext, price, image_url, badge) 
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    stmt.run(title, subtext, price, image_url, badge);
+    // Insert new product
+    const newProduct = {
+      id: Date.now(),
+      title,
+      subtext,
+      price,
+      image_url,
+      badge
+    };
+    products.push(newProduct);
   }
 
+  saveProducts(products);
   res.json({ success: true, message: "Card saved successfully!" });
 });
 
@@ -142,7 +146,10 @@ app.delete("/api/admin/products/:id", (req, res) => {
     return res.status(401).json({ success: false, message: "Unauthorized" });
   }
 
-  db.prepare("DELETE FROM products WHERE id = ?").run(req.params.id);
+  let products = getProducts();
+  products = products.filter(p => p.id !== parseInt(req.params.id));
+  saveProducts(products);
+
   res.json({ success: true, message: "Card deleted" });
 });
 
