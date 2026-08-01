@@ -40,61 +40,84 @@ const transporter = nodemailer.createTransport({
 });
 
 /* ===============================
-   1. PAYMENT VERIFICATION ROUTE
+1. PAYMENT VERIFICATION ROUTE
 =============================== */
 app.post("/api/verify-payment", async (req, res) => {
-  const { email, txid, orderId, amount } = req.body;
+    const { email, txid, orderId, amount } = req.body;
 
-  if (!txid || !email) {
-    return res.status(400).json({ success: false, message: "Missing required details." });
-  }
-
-  try {
-    const response = await fetch("https://api.nowpayments.io/v1/payment/?limit=100", {
-      headers: { "x-api-key": process.env.NOWPAYMENTS_API_KEY }
-    });
-    const data = await response.json();
-
-    const matchingPayment = data.payments?.find(
-      (p) => p.payin_hash?.toLowerCase() === txid.toLowerCase() && p.payment_status === "finished"
-    );
-
-    if (matchingPayment) {
-      // Send Email Alert
-      const mailOptions = {
-        from: process.env.CLIENT_NOTIFICATION_EMAIL,
-        to: process.env.CLIENT_NOTIFICATION_EMAIL,
-        subject: `🚨 New Order Confirmed! [Order ${orderId}]`,
-        html: `
-          <h2>New Payment Received!</h2>
-          <p><strong>Order ID:</strong> ${orderId}</p>
-          <p><strong>Customer Email:</strong> ${email}</p>
-          <p><strong>Amount:</strong> ${amount}</p>
-          <p><strong>Transaction Hash (TXID):</strong> <code>${txid}</code></p>
-          <p>Please deliver the account details to the customer.</p>
-        `
-      };
-
-      transporter.sendMail(mailOptions, (err, info) => {
-        if (err) console.error("Email notification error:", err);
-        else console.log("Notification email sent successfully:", info.response);
-      });
-
-      return res.json({ success: true, message: "Payment verified successfully!" });
-
-    } else {
-      return res.status(400).json({ 
-        success: false, 
-        message: "Transaction Hash not found or payment status is not finished." 
-      });
+    if (!txid || !email) {
+        return res.status(400).json({ success: false, message: "Missing required details." });
     }
 
-  } catch (err) {
-    console.error("Verification error:", err);
-    return res.status(500).json({ success: false, message: "Server error during verification." });
-  }
-});
+    try {
+        const response = await fetch("https://api.nowpayments.io/v1/payment/?limit=100", {
+            headers: { "x-api-key": process.env.NOWPAYMENTS_API_KEY }
+        });
+        const data = await response.json();
 
+        const matchingPayment = data.payments?.find(
+            (p) => p.payin_hash?.toLowerCase() === txid.toLowerCase() && p.payment_status === "finished"
+        );
+
+        if (matchingPayment) {
+            
+            // 1️⃣ ADMIN NOTIFICATION EMAIL (Sent to You)
+            const adminMailOptions = {
+                from: process.env.CLIENT_NOTIFICATION_EMAIL,
+                to: process.env.CLIENT_NOTIFICATION_EMAIL,
+                subject: `🚨 New Order Confirmed! [Order ${orderId}]`,
+                html: `
+                    <h2>New Payment Received!</h2>
+                    <p><strong>Order ID:</strong> ${orderId}</p>
+                    <p><strong>Customer Email:</strong> ${email}</p>
+                    <p><strong>Amount:</strong> ${amount}</p>
+                    <p><strong>Transaction Hash (TXID):</strong> <code>${txid}</code></p>
+                    <p>Please deliver the account details to the customer.</p>
+                `
+            };
+
+            // 2️⃣ CLIENT RECEIPT EMAIL (Sent to Your Client)
+            const clientMailOptions = {
+                from: process.env.CLIENT_NOTIFICATION_EMAIL,
+                to: email, // <--- Sends directly to customer email!
+                subject: `Order Confirmation - ${orderId}`,
+                html: `
+                    <h2>Thank You for Your Order!</h2>
+                    <p>We have successfully verified your crypto payment.</p>
+                    <hr />
+                    <p><strong>Order ID:</strong> ${orderId}</p>
+                    <p><strong>Amount Paid:</strong> ${amount}</p>
+                    <p><strong>Transaction Hash:</strong> <code>${txid}</code></p>
+                    <hr />
+                    <p>Our team is preparing your account credentials. You will receive your login details shortly via this email or WhatsApp support.</p>
+                    <p>Thank you for choosing <strong>BuyAHandle</strong>!</p>
+                `
+            };
+
+            // Dispatch both emails
+            transporter.sendMail(adminMailOptions, (err) => {
+                if (err) console.error("Admin notification error:", err);
+            });
+
+            transporter.sendMail(clientMailOptions, (err, info) => {
+                if (err) console.error("Client email error:", err);
+                else console.log("Receipt email sent to client:", info.response);
+            });
+
+            return res.json({ success: true, message: "Payment verified successfully!" });
+
+        } else {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Transaction Hash not found or payment status is not finished." 
+            });
+        }
+
+    } catch (err) {
+        console.error("Verification error:", err);
+        return res.status(500).json({ success: false, message: "Server error during verification." });
+    }
+});
 /* ===============================
    2. ACCOUNT CARD MANAGEMENT ROUTES
 =============================== */
